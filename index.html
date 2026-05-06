@@ -142,7 +142,7 @@
             <h1 style="margin:0; font-size: 22px; color: var(--text-main);">Dashboard ผู้สูงอายุ</h1>
             <p style="margin:5px 0 0; color: var(--text-sub); font-size: 14px;">จัดการข้อมูลและติดตามผล</p>
         </div>
-        <i class="fas fa-sync-alt" style="cursor:pointer; color: var(--primary);" onclick="loadData()"></i>
+        <i class="fas fa-sync-alt" style="cursor:pointer; color: var(--primary); font-size: 20px;" onclick="loadData()"></i>
     </div>
 
     <div class="stat-grid">
@@ -168,7 +168,7 @@
     </div>
 
     <div id="list">
-        <div style="text-align:center; padding:50px; color:var(--text-sub);"><i class="fas fa-spinner fa-spin"></i> กำลังโหลดข้อมูล...</div>
+        <div style="text-align:center; padding:50px; color:var(--text-sub);"><i class="fas fa-spinner fa-spin"></i> กำลังเชื่อมต่อข้อมูล...</div>
     </div>
 </div>
 
@@ -197,38 +197,52 @@
 
         <div style="display:flex; gap:10px;">
             <button class="btn-save" style="background:#64748b;" onclick="closeModal()">ยกเลิก</button>
-            <button class="btn-save" onclick="updateData()">บันทึกข้อมูล</button>
+            <button class="btn-save" onclick="updateData()">บันทึกการแก้ไข</button>
         </div>
     </div>
 </div>
 
 <script>
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyutjVzJmg0t8KGzrkxoe1L_XLxu54icxSNA6d4f3iijHCCP6XiQwxKHFK76X_s1REs/exec"; 
     let masterData = [];
 
-    async function loadData() {
-        const res = await fetch(WEB_APP_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'fetch' })
-        });
-        masterData = await res.json();
-        render(masterData);
+    // ฟังก์ชันดึงข้อมูลใหม่โดยใช้ google.script.run
+    function loadData() {
+        document.getElementById('list').innerHTML = '<div style="text-align:center; padding:50px; color:var(--text-sub);"><i class="fas fa-spinner fa-spin"></i> กำลังดึงข้อมูลจาก Google Sheet...</div>';
+        
+        google.script.run.withSuccessHandler(function(data) {
+            masterData = data;
+            render(masterData);
+        }).withFailureHandler(function(err) {
+            document.getElementById('list').innerHTML = '<div style="text-align:center; padding:50px; color:red;">เกิดข้อผิดพลาดในการโหลดข้อมูล</div>';
+        }).getData();
     }
 
     function render(data) {
         const listDiv = document.getElementById('list');
         listDiv.innerHTML = '';
         
+        if (!data || data.length === 0) {
+            listDiv.innerHTML = '<div style="text-align:center; padding:50px; color:var(--text-sub);">ไม่พบข้อมูลในระบบ</div>';
+            return;
+        }
+
         data.forEach(item => {
             const div = document.createElement('div');
             div.className = 'elder-card';
             div.onclick = () => openEdit(item);
+            
+            // ป้องกันความผิดพลาดถ้าข้อมูลบางช่องว่าง
+            const firstName = item.firstName || "ไม่ระบุ";
+            const lastName = item.lastName || "";
+            const age = item.age || "-";
+            const chronic = item.chronicDiseases || "-";
+
             div.innerHTML = `
                 <div class="elder-info">
-                    <div class="elder-avatar">${item.firstName.charAt(0)}</div>
+                    <div class="elder-avatar">${firstName.charAt(0)}</div>
                     <div>
-                        <div style="font-weight:600;">${item.firstName} ${item.lastName}</div>
-                        <div style="font-size:12px; color:var(--text-sub);">อายุ ${item.age} ปี | ${item.chronicDiseases}</div>
+                        <div style="font-weight:600;">${firstName} ${lastName}</div>
+                        <div style="font-size:12px; color:var(--text-sub);">อายุ ${age} ปี | โรค: ${chronic}</div>
                     </div>
                 </div>
                 <i class="fas fa-chevron-right" style="color:#e2e8f0;"></i>
@@ -237,14 +251,14 @@
         });
 
         document.getElementById('stat-total').innerText = data.length;
-        document.getElementById('stat-risk').innerText = data.filter(d => d.chronicDiseases !== '-').length;
+        document.getElementById('stat-risk').innerText = data.filter(d => d.chronicDiseases && d.chronicDiseases !== '-').length;
     }
 
     function filterData() {
         const text = document.getElementById('search').value.toLowerCase();
         const filtered = masterData.filter(d => 
-            d.firstName.toLowerCase().includes(text) || 
-            d.lastName.toLowerCase().includes(text)
+            (d.firstName && d.firstName.toLowerCase().includes(text)) || 
+            (d.lastName && d.lastName.toLowerCase().includes(text))
         );
         render(filtered);
     }
@@ -261,28 +275,37 @@
 
     function closeModal() { document.getElementById('editModal').style.display = 'none'; }
 
-    async function updateData() {
-        Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    function updateData() {
+        Swal.fire({ 
+            title: 'กำลังบันทึก...', 
+            allowOutsideClick: false, 
+            didOpen: () => Swal.showLoading() 
+        });
         
         const payload = {
-            action: 'update',
             lineId: document.getElementById('edit-lineId').value,
             firstName: document.getElementById('edit-fname').value,
             lastName: document.getElementById('edit-lname').value,
             age: document.getElementById('edit-age').value,
             gender: document.getElementById('edit-gender').value,
-            weight: 0, // ค่าเดิมไม่ได้โชว์ใน edit แต่ส่งกลับไปได้
+            weight: 0, 
             height: 0,
             chronicDiseases: document.getElementById('edit-disease').value
         };
 
-        await fetch(WEB_APP_URL, { method: 'POST', body: JSON.stringify(payload) });
-        Swal.fire('สำเร็จ', 'อัปเดตข้อมูลเรียบร้อย', 'success');
-        closeModal();
-        loadData();
+        google.script.run.withSuccessHandler(function(res) {
+            if (res === "success") {
+                Swal.fire('สำเร็จ', 'อัปเดตข้อมูลเรียบร้อย', 'success');
+                closeModal();
+                loadData(); // โหลดข้อมูลใหม่หลังจากบันทึก
+            } else {
+                Swal.fire('ผิดพลาด', 'ไม่พบรายชื่อที่ต้องการแก้ไข', 'error');
+            }
+        }).updateElderData(payload);
     }
 
-    loadData();
+    // โหลดข้อมูลทันทีที่เปิดหน้า
+    window.onload = loadData;
 </script>
 </body>
 </html>
